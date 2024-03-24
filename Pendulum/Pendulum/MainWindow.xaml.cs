@@ -1,6 +1,7 @@
 ﻿using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
+using ScottPlot.Colormaps;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,7 +26,7 @@ namespace Pendulum
         private double PendulumMass = 1;
         private double PendulumLength = 1;
         private double DampingCoefficient = 0.1;
-        private double Theta0 = 45;
+        private double Theta0 = 30;
         private double Alpha0 = 0;
         double[] xx = new double[2];
         double[] xx2 = new double[2];
@@ -38,11 +39,13 @@ namespace Pendulum
         Double yMin = -100;
         double xMax = 50;
         double yMax = 100;
+        double period_result = 0;
+        double period_result_g = 0;
+        double g1 = 9.81;
         List<double> pointsX = new List<double>();
         List<double> pointsY = new List<double>();
         List<double> energy = new List<double>();
         List<double> times = new List<double>();
-
 
         public MainWindow()
         {
@@ -57,27 +60,10 @@ namespace Pendulum
             energy.Clear();
             times.Clear();
             Stop();
-            double xMinFixed = 0; // Минимальное значение для оси X
-            double xMaxFixed = 50; // Максимальное значение для оси X
-            double yMinFixed = -100; // Минимальное значение для оси Y
-            double yMaxFixed = 100; // Максимальное значение для оси Y
+            period_result_g = 0;
+            period_result = 0;
 
-            var model = new PlotModel { Title = "Theta - Time Curve" };
 
-            model.Axes.Add(new OxyPlot.Axes.LinearAxis { Position = OxyPlot.Axes.AxisPosition.Bottom, Minimum = xMinFixed, Maximum = xMaxFixed });
-            model.Axes.Add(new OxyPlot.Axes.LinearAxis { Position = OxyPlot.Axes.AxisPosition.Left, Minimum = yMinFixed, Maximum = yMaxFixed });
-
-            // Построение графика с использованием OxyPlot
-            var series = new LineSeries();
-
-            for (int i = 0; i < pointsX.Count; i++)
-            {
-                series.Points.Add(new DataPoint(pointsX[i], pointsY[i]));
-            }
-
-            model.Series.Add(series);
-            plotView.Model = model;
-            //В случае неправильного ввода будут использованы начальные данные
             try
             {
                 PendulumMass = Convert.ToDouble(tbMass.Text);
@@ -88,23 +74,33 @@ namespace Pendulum
             }
             catch {
                 PendulumMass = 1;
-                PendulumLength = 1; DampingCoefficient = 0.1;
+                PendulumLength = 1; DampingCoefficient = 0;
                 Theta0 = 45;
                 dt = 0.03;
+                dt2 = 0.03;
             }
+            //Расчет периода
             Theta0 = Math.PI * Theta0 / 180;
             Alpha0 = Math.PI * Alpha0 / 180;
+            period_result = 4.0 * Math.Sqrt(PendulumLength / g1) * cei1(Math.Sin(Theta0 / 2.0));
+            period_result_g = (2.0 * 3.1415926 * Math.Sqrt(PendulumLength / g1));
+            period.Text = period_result.ToString();
+            period_guig.Text = period_result_g.ToString();
 
+            //Таймеры
             time = 0;
             time2 = 0;
+
+
             xx = new double[2] { Theta0, Alpha0 };
             xx2 = new double[2] { Theta0,Alpha0 };
+
             CompositionTarget.Rendering += StartAnimation;
             CompositionTarget.Rendering += StartAnimationForGrafics;
         }
         private void StartAnimation(object sender, EventArgs e)
         {
-            ODESolver.Function[] f = new ODESolver.Function[2] { f1, f2 };
+            ODESolver.Function[] f = new ODESolver.Function[2] { functionForxx1, function2 };
             double[] result = ODESolver.RungeKutta4(f, xx, time, dt);
 
             Point pt = new Point(140 + 130 * Math.Sin(result[0]), 20 + 130 * Math.Cos(result[0]));
@@ -114,6 +110,7 @@ namespace Pendulum
 
             xx = result;
             time += dt;
+
             if (time > 0 && Math.Abs(result[0]) < 0.01 && Math.Abs(result[1]) < 0.001)
             {
                 StopAnim();
@@ -122,12 +119,12 @@ namespace Pendulum
 
         private void  StartAnimationForGrafics(object sender, EventArgs e)
         {
-            ODESolver.Function[] f = new ODESolver.Function[2] { f1, f2 };
+            ODESolver.Function[] f = new ODESolver.Function[2] { functionForxx1, function2 };
             double[] result2 = ODESolver.RungeKutta4(f, xx2, time2, dt2);
             //Расчет энергии
             double kineticEnergy = 0.5 * PendulumMass * Math.Pow(result2[1], 2); // Кинетическая энергия
             double potentialEnergy = PendulumMass * 9.81 * (PendulumLength - PendulumLength * Math.Cos(result2[0])); // Потенциальная энергия
-            double totalEnergy = kineticEnergy + potentialEnergy; // Полная энергия
+            double totalEnergy = kineticEnergy + potentialEnergy; // Полная энергия в Джоулях
             energy.Add(totalEnergy);
             times.Add(time2);
 
@@ -153,15 +150,15 @@ namespace Pendulum
             energyPlotView.Model = energyModel;
             //______________________________________________________________
             //Вывод графика для координат маятника
-            pointsX.Add(XNormalize(time2) + 10);
-            pointsY.Add(YNormalize(180 * result2[0] / Math.PI));
+            pointsX.Add(time2 + 10);
+            pointsY.Add(result2[0] * 180 / Math.PI);
             if (pointsX.Count > 1000)
             {
                 pointsX.RemoveAt(0);
                 pointsY.RemoveAt(0);
             }
             
-            var model = new PlotModel { Title = "Theta - Time Curve" };
+            var model = new PlotModel { Title = "Theta - Time" };
             var series = new LineSeries();
 
             for (int i = 0; i < pointsX.Count; i++)
@@ -175,7 +172,7 @@ namespace Pendulum
             time2 += dt2;
             if (time > 0 && Math.Abs(result2[0]) < 0.01 && Math.Abs(result2[1]) < 0.001)
             {
-                StopAnim();
+                StopAnimChart();
             }
 
         }
@@ -185,8 +182,9 @@ namespace Pendulum
             pointsY.Clear();
             energy.Clear();
             times.Clear();
-
-            var model = new PlotModel { Title = "Theta - Time Curve" };
+            period_result = 0;
+            period_result_g = 0;
+            var model = new PlotModel { Title = "Theta - Time" };
 
             model.Axes.Add(new OxyPlot.Axes.LinearAxis { Position = OxyPlot.Axes.AxisPosition.Bottom, Minimum = xMin, Maximum = xMax });
             model.Axes.Add(new OxyPlot.Axes.LinearAxis { Position = OxyPlot.Axes.AxisPosition.Left, Minimum = yMin, Maximum = yMax });
@@ -194,19 +192,17 @@ namespace Pendulum
             plotView.Model = model;
             var energyModel = new PlotModel { };
 
-            var energySeries = new LineSeries
-            {
-                // Установка цвета и толщины линии
-                Color = OxyColors.Blue, // Цвет линии
-                StrokeThickness = 2 // Толщина линии
-            };
+
             energyModel.Axes.Add(new OxyPlot.Axes.LinearAxis { Position = OxyPlot.Axes.AxisPosition.Bottom, Minimum = xMin, Maximum = xMax });
             energyModel.Axes.Add(new OxyPlot.Axes.LinearAxis { Position = OxyPlot.Axes.AxisPosition.Left, Minimum = yMin, Maximum = yMax });
             energyPlotView.Model = energyModel;
             PendulumInitialize();
             StopAnim();
         }
-
+        private void StopAnimChart()
+        {
+            CompositionTarget.Rendering -= StartAnimationForGrafics;
+        }
         private void StopAnim()
         {
 
@@ -219,7 +215,7 @@ namespace Pendulum
             tbMass.Text = "1";
             tbLength.Text = "1";
             tbDamping.Text = "0,1";
-            tbTheta0.Text = "45";
+            tbTheta0.Text = "30";
             line1.X2 = 140;
             line1.Y2 = 150;
             ball.Center = new Point(140, 150);
@@ -233,32 +229,32 @@ namespace Pendulum
             line1.X2 = 140;
             line1.Y2 = 150;
             ball.Center = new Point(140, 150);
+            period_result = 0;
+            period_result_g = 0;
             StopAnim();
         }
-        private double f1(double[] xx, double t)
+        private double functionForxx1(double[] xx, double t) //Угловая скорость маятника
         {
             return xx[1];
         }
-        private double f2(double[] xx, double t)
+        private double function2(double[] xx, double t) //Угловое ускорения маятника
         {
             double m = PendulumMass;
             double L = PendulumLength;
             double g = 9.81;
             double b = DampingCoefficient;
-            return -g * Math.Sin(xx[0]) / L - b * xx[1] / m;
+            return -g * Math.Sin(xx[0]) / L -b * xx[1] / m;
         }
-        private double XNormalize(double x)
+        public double cei1(double k)// выч. полного эллипт. интеграла 1 рода
         {
-            double result = (x - xMin) *
-            canvasRight.Width / (xMax - xMin);
-            return result;
-        }
-        private double YNormalize(double y)
-        {
-            double result = canvasRight.Height - (y - yMin) *
-            canvasRight.Height / (yMax - yMin);
-            return result;
+            double a, b, t;
+            t = 1 - k * k;
+            a = (((0.01451196212 * t + 0.03742563713) * t
+              + 0.03590092383) * t + 0.09666344259) * t + 1.38629436112;
+            b = (((0.00441787012 * t + 0.03328355346) * t + 0.06880248576)
+              * t + 0.12498593597) * t + 0.5;
+            return (a - b * Math.Log(t));
         }
     }
-    
+
 }
